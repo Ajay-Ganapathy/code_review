@@ -27,9 +27,9 @@ from code_review import CodeReviewAction, CodeReviewObservation, CodeReviewEnvir
 API_BASE_URL = "https://router.huggingface.co/v1"
 API_KEY = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME")
-MAX_STEPS = 30
-TEMPERATURE = 0.0
-MAX_TOKENS = 300
+MAX_STEPS = 2
+TEMPERATURE = 0.2
+MAX_TOKENS = 512
 
 DEBUG = True
 ACTION_PREFIX_RE = re.compile(
@@ -43,26 +43,31 @@ SYSTEM_PROMPT = textwrap.dedent(
     """
 You are a senior software engineer reviewing a pull request.
 
-Your responsibilities:
-1. Identify all issues in the code:
-   - bugs
-   - edge cases
-   - performance issues
-   - security vulnerabilities
-2. Suggest fixes where appropriate
-3. Decide whether the PR should be approved or rejected
+You MUST follow this workflow:
 
-Guidelines:
-- Be precise and use clear technical terminology
-- Mention specific issues explicitly
-- Consider correctness, safety, and best practices
-- Reject if there are bugs or risks
+Step 1:
+Identify all issues in the code.
+List them clearly in the comment.
 
-Output ONLY valid JSON:
+Step 2:
+Provide a suggested fix with corrected code.
+
+Step 3:
+Make a final decision:
+- reject if any bug, security risk, or incorrect logic exists
+- approve only if the code is safe and correct
+
+Rules:
+- Mention every issue explicitly
+- Use precise technical language
+- Write detailed comments (>30 characters)
+
+Return ONLY JSON:
+
 {
   "action_type": "comment | suggest_fix | final_decision",
-  "comment": "string or null",
-  "suggested_code": "string or null",
+  "comment": "...",
+  "suggested_code": "...",
   "decision": "approve | reject | null"
 }
     """
@@ -75,30 +80,49 @@ def build_history_lines(history: List[str]) -> str:
     return "\n".join(history[-4:])
 
 
-def build_prompt(step: int, observation) -> str:
-    prompt = textwrap.dedent(
+def build_prompt(step: int, max_steps: int, observation) -> str:
+    if step == 1:
+        instruction = (
+            "Carefully analyze the diff. List EVERY issue you find in the comment field. "
+            "Use exact technical terms (e.g. 'sql injection', 'null handling', 'hardcoded password'). "
+            "Set action_type to 'comment'."
+            "If the code looks correct with no issues, still output a comment like: 'No issues found. Code is clean.' and prepare to approve."
+        )
+    elif step == 2:
+        instruction = (
+            "Provide the fix AND make the final decision if you are confident. "
+            "Set action_type to 'final_decision'. "
+            "Include suggested_code with the corrected code."
+        )
+
+    diff_text = "\n\n".join(
+        f"File: {d.file_name}\n{d.diff}" for d in observation.pr.diffs
+    )
+
+    return textwrap.dedent(
         f"""
-        Step: {step}
-        Review this Pull Request carefully.
+        Step {step}/{max_steps}
 
         Title: {observation.pr.title}
         Description: {observation.pr.description}
 
         Code Diffs:
-        {observation.pr.diffs}
+        {diff_text}
 
         Previous Comments:
-        {observation.previous_comments}
+        {build_history_lines(observation.previous_comments)}
 
-        Instructions:
-        - Identify ALL issues
-        - Suggest a fix if possible
-        - Decide approve or reject
+        Your task: {instruction}
 
-        Return JSON only.
-        """
+        Return ONLY valid JSON:
+        {{
+          "action_type": "...",
+          "comment": "...",
+          "suggested_code": "...",
+          "decision": "approve | reject | null"
+        }}
+    """
     ).strip()
-    return prompt
 
 
 def safe_completion(client, messages):
@@ -142,36 +166,32 @@ def parse_action(text: str) -> Dict[str, Any]:
 def run_episode(client, env):
     obs = env.reset()
     final_score = 0.0
+    conversation = []  # persists across steps
 
     for step in range(1, MAX_STEPS + 1):
+        prompt = build_prompt(step, MAX_STEPS, obs)
+        conversation.append({"role": "user", "content": prompt})
 
-        prompt = build_prompt(step, obs)
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
-
-        completion = safe_completion(client,messages)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation
+        completion = safe_completion(client, messages)
 
         if completion is None:
-            print("Not able to send messages to LLM:")
             action = fallback_action()
+            response_text = json.dumps(action)
         else:
-            print("Sending messages to LLM:")
             response_text = completion.choices[0].message.content or ""
-            # print(f"[INFO] Response: {response_text}")
             action = parse_action(response_text)
-            print(action)
 
-        obs, reward, done, _ = env.step(action)
+        # Add model reply to history so it knows what it already said
+        conversation.append({"role": "assistant", "content": response_text})
 
+        obs, reward, done, info = env.step(action)
         final_score = max(final_score, reward.score)
-
-        print(f"Step {step} | Action: {action} | Reward: {reward.score:.2f}")
+        print(
+            f"Step {step} | Action type: {action.get('action_type')} | Score: {reward.score:.2f}"
+        )
 
         if done:
-            print(f"Done in {step} steps")
             break
 
     return final_score
@@ -206,3 +226,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

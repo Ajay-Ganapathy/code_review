@@ -298,3 +298,4 @@ class CodeReviewEnvironment(Environment):
 
         # Wrong decision → partial penalty (not negative)
         return 0.2
+
