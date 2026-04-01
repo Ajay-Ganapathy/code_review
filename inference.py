@@ -90,9 +90,15 @@ def build_prompt(step: int, max_steps: int, observation) -> str:
         )
     elif step == 2:
         instruction = (
-            "Provide the fix AND make the final decision if you are confident. "
-            "Set action_type to 'final_decision'. "
-            "Include suggested_code with the corrected code."
+            "Now provide the fix. Set action_type to 'suggest_fix'. "
+            "Write the corrected code in suggested_code. "
+            "Also repeat the issues in the comment field."
+        )
+    else:
+        instruction = (
+            "Make your final decision. Set action_type to 'final_decision'. "
+            "Set decision to 'reject' if any bug, security issue, or bad logic exists. "
+            "Set decision to 'approve' only if the code is clean and correct."
         )
 
     diff_text = "\n\n".join(
@@ -226,4 +232,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

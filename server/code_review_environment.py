@@ -249,11 +249,18 @@ class CodeReviewEnvironment(Environment):
         if not comment or not issues:
             return 0.0
 
-        comment = self.normalize(comment)
+        comment_tokens = set(self.normalize(comment).split())
+        total_score = 0.0
 
-        matches = sum(1 for issue in issues if self.normalize(issue) in comment)
+        for issue in issues:
+            issue_tokens = set(self.normalize(issue).split())
+            if not issue_tokens:
+                continue
+            # Token overlap — partial credit for semantic similarity
+            overlap = len(comment_tokens & issue_tokens) / len(issue_tokens)
+            total_score += min(overlap, 1.0)
 
-        return matches / len(issues)
+        return total_score / len(issues)
 
     # ==============================
     # FIX MATCH (FUZZY)
@@ -265,18 +272,18 @@ class CodeReviewEnvironment(Environment):
         expected_fix = self.normalize(ground_truth.get("fix", ""))
         suggested_code = self.normalize(suggested_code)
 
-        # direct match
         if expected_fix in suggested_code:
             return 1.0
 
-        # partial keyword match
-        keywords = expected_fix.split()
-        if not keywords:
+        # Token overlap instead of exact keyword match
+        expected_tokens = set(expected_fix.split())
+        suggested_tokens = set(suggested_code.split())
+
+        if not expected_tokens:
             return 0.0
 
-        matches = sum(1 for word in keywords if word in suggested_code)
-
-        return matches / len(keywords)
+        overlap = len(expected_tokens & suggested_tokens) / len(expected_tokens)
+        return overlap
 
     # ==============================
     # DECISION MATCH
@@ -298,4 +305,3 @@ class CodeReviewEnvironment(Environment):
 
         # Wrong decision → partial penalty (not negative)
         return 0.2
-
