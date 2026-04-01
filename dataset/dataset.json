@@ -5,10 +5,10 @@
       "id": "1",
       "title": "Fix comparison bug",
       "description": "Bug in condition",
-      "language": "javascript",
+      "language": "python",
       "diffs": [
         {
-          "file_name": "app.js",
+          "file_name": "calculate.py",
           "diff": "- if (x = 5) {}\n+ if (x == 5) {}"
         }
       ]
@@ -77,26 +77,6 @@
       "issues": ["inefficient loop"],
       "decision": "approve",
       "fix": "use 'if target in arr'"
-    }
-  },
-  {
-    "task_type": "medium",
-    "pr": {
-      "id": "5",
-      "title": "Null handling issue",
-      "description": "API response handling",
-      "language": "javascript",
-      "diffs": [
-        {
-          "file_name": "api.js",
-          "diff": "function getName(user) {\n  return user.name.toUpperCase();\n}"
-        }
-      ]
-    },
-    "ground_truth": {
-      "issues": ["null or undefined handling"],
-      "decision": "reject",
-      "fix": "check if user and user.name exist"
     }
   },
   {
@@ -181,26 +161,6 @@
     "issues": ["variable name typo"],
     "decision": "reject",
     "fix": "replace nmae with name"
-  }
-},
-{
-  "task_type": "easy",
-  "pr": {
-    "id": "10",
-    "title": "Refactor greet function",
-    "description": "Improves readability and follows best practices",
-    "language": "python",
-    "diffs": [
-      {
-        "file_name": "greet.py",
-        "diff": "def greet(name):\n    return f\"Hello {name}\""
-      }
-    ]
-  },
-  "ground_truth": {
-    "issues": [],
-    "decision": "approve",
-    "fix": ""
   }
 }
 ]

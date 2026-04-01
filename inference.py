@@ -27,7 +27,7 @@ from code_review import CodeReviewAction, CodeReviewObservation, CodeReviewEnvir
 API_BASE_URL = "https://router.huggingface.co/v1"
 API_KEY = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME")
-MAX_STEPS = 2
+MAX_STEPS = 3
 TEMPERATURE = 0.2
 MAX_TOKENS = 512
 
