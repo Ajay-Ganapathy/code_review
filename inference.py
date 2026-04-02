@@ -22,8 +22,8 @@ from openai import OpenAI
 import numpy as np
 import json
 
-from code_review import CodeReviewAction, CodeReviewObservation, CodeReviewEnvironment
-
+from code_review import CodeReviewAction, CodeReviewObservation
+from code_review.client import CodeReviewEnv
 API_BASE_URL = "https://router.huggingface.co/v1"
 API_KEY = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME")
@@ -37,7 +37,6 @@ ACTION_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 ACTION_PATTERN = re.compile(r"[A-Za-z_]+\s*\(.*\)", re.DOTALL)
-
 
 SYSTEM_PROMPT = textwrap.dedent(
     """
@@ -74,13 +73,30 @@ Return ONLY JSON:
 ).strip()
 
 
+
 def build_history_lines(history: List[str]) -> str:
     if not history:
         return "None"
     return "\n".join(history[-4:])
 
+def safe_completion(client, messages):
+    for _ in range(3):
+        try:
+            return client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+            )
+        except Exception as e:
+            print("Error during completion, retrying...")
+            print(e)
+            continue
+    return None
+
 
 def build_prompt(step: int, max_steps: int, observation) -> str:
+    # print("Obeservation === " , observation)
     if step == 1:
         instruction = (
             "Carefully analyze the diff. List EVERY issue you find in the comment field. "
@@ -131,22 +147,6 @@ def build_prompt(step: int, max_steps: int, observation) -> str:
     ).strip()
 
 
-def safe_completion(client, messages):
-    for _ in range(3):
-        try:
-            return client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS,
-            )
-        except Exception as e:
-            print("Error during completion, retrying...")
-            print(e)
-            continue
-    return None
-
-
 def fallback_action():
     return {
         "action_type": "comment",
@@ -168,67 +168,82 @@ def parse_action(text: str) -> Dict[str, Any]:
         print(e)
         return fallback_action()
 
+async def run_episode(client, env):
+    result = await env.reset()
+    
+    obs = result.observation
 
-def run_episode(client, env):
-    obs = env.reset()
     final_score = 0.0
-    conversation = []  # persists across steps
 
     for step in range(1, MAX_STEPS + 1):
+
         prompt = build_prompt(step, MAX_STEPS, obs)
-        conversation.append({"role": "user", "content": prompt})
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation
-        completion = safe_completion(client, messages)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
 
+        completion = safe_completion(client, messages)  # still sync
+        # print(completion)
         if completion is None:
             action = fallback_action()
-            response_text = json.dumps(action)
         else:
             response_text = completion.choices[0].message.content or ""
-            action = parse_action(response_text)
+            action_dict = parse_action(response_text)
 
-        # Add model reply to history so it knows what it already said
-        conversation.append({"role": "assistant", "content": response_text})
+            # print(response_text)
 
-        obs, reward, done, info = env.step(action)
-        final_score = max(final_score, reward.score)
-        print(
-            f"Step {step} | Action type: {action.get('action_type')} | Score: {reward.score:.2f}"
-        )
+            action = CodeReviewAction(
+                action_type=action_dict.get("action_type"),
+                comment=action_dict.get("comment"),
+                suggested_code=action_dict.get("suggested_code"),
+                decision=action_dict.get("decision"),
+            )
+
+        result = await env.step(action)
+        # print("Result === " , result)
+
+        obs = result.observation
+        reward = result.reward
+        done = result.done
+
+        final_score = max(final_score, reward.score if reward else 0.0)
+
+        print(f"Step {step} | Action: {action} | Reward: {reward}")
 
         if done:
+            print(f"Done in {step} steps")
             break
 
     return final_score
 
+import asyncio
 
-def main() -> None:
+async def main():
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    # env = BrowserGymEnv.from_docker_image(
-    #     image="browsergym-env:latest",
-    #     env_vars={
-    #         "BROWSERGYM_BENCHMARK": "miniwob",
-    #         "BROWSERGYM_TASK_NAME": "click-test",
-    #     },
-    # )
-
-    env = CodeReviewEnvironment()
     scores = []
+    
 
-    try:
-        for i in range(len(env.dataset)):
+    async with CodeReviewEnv(base_url="http://localhost:8000") as env:
+        # print(env)
+        NUM_EPISODES=6
+        # print(NUM_EPISODES)
+        
+        for i in range(NUM_EPISODES):
+            print(f"\n=== Episode {i+1} ===")
             env.task_index = i
-            score = run_episode(client, env)
-            scores.append(score)
-            print(scores)
-        else:
-            print(f"Reached max steps ({MAX_STEPS}).")
 
-    finally:
-        env.close()
+            score = await run_episode(client, env)
+            scores.append(score)
+
+            print(f"Scores so far: {scores}")
+            #return 0
+
+    print("\nFinished all episodes")
+    print(f"Final Scores: {scores}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

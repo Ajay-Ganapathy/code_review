@@ -12,7 +12,7 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import CodeReviewAction, CodeReviewObservation
+from .models import CodeReviewAction, CodeReviewObservation, CodeReviewReward , CodeReviewPullRequest
 
 
 class CodeReviewEnv(
@@ -45,18 +45,26 @@ class CodeReviewEnv(
     """
 
     def _step_payload(self, action: CodeReviewAction) -> Dict:
-        """
-        Convert CodeReviewAction to JSON payload for step message.
+        # print("Action == ", action)
 
-        Args:
-            action: CodeReviewAction instance
+        # Handle dict input
+        if isinstance(action, dict):
+            act = {
+                "action_type": action.get("action_type"),
+                "comment": action.get("comment"),
+                "suggested_code": action.get("suggested_code"),
+                "decision": action.get("decision"),
+            }
+        else:
+            act = {
+                "action_type": action.action_type,
+                "comment": action.comment,
+                "suggested_code": action.suggested_code,
+                "decision": action.decision,
+            }
 
-        Returns:
-            Dictionary representation suitable for JSON encoding
-        """
-        return {
-            "message": action.message,
-        }
+        # print("Act == ", act)
+        return act
 
     def _parse_result(self, payload: Dict) -> StepResult[CodeReviewObservation]:
         """
@@ -68,18 +76,53 @@ class CodeReviewEnv(
         Returns:
             StepResult with CodeReviewObservation
         """
-        obs_data = payload.get("observation", {})
-        observation = CodeReviewObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
-            done=payload.get("done", False),
-            reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
+
+        """
+         return CodeReviewObservation(
+            #echoed_message="Code Review environment ready!",
+            pr=self.pr,
+            previous_comments=self.history,
+            step_count=self.step_count,
+            max_steps=self.max_steps,
+            reward=0.0,
+            done=False,
         )
+        """
+        # print("Payload ====== ", payload)
+
+      
+        obs_data = payload.get("observation") or {}
+
+        if "observation" in obs_data:  # nested case
+            obs_data = obs_data["observation"]
+
+     
+
+      
+        if not obs_data or "pr" not in obs_data:
+            raise ValueError(f"Invalid observation payload: {payload}")
+
+      
+        pr_data = obs_data["pr"]
+
+        observation = CodeReviewObservation(
+            pr=CodeReviewPullRequest(**pr_data),
+            previous_comments=obs_data.get("previous_comments") or [],
+            step_count=obs_data.get("step_count", 0),
+            max_steps=obs_data.get("max_steps", 3),
+        )
+
+        # Handle reward (reset vs step)
+        reward_data = payload.get("reward")
+        reward = None
+
+        if isinstance(reward_data, dict):
+            reward = CodeReviewReward(**reward_data)
+        # else: float/None → ignore (reset case)
 
         return StepResult(
             observation=observation,
-            reward=payload.get("reward"),
+            reward=reward,
             done=payload.get("done", False),
         )
 

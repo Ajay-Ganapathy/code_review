@@ -11,8 +11,8 @@ The code_review environment is a simple test environment that echoes back messag
 """
 
 from openenv.core.env_server.types import Action, Observation
-from pydantic import Field, BaseModel
-from typing import Optional, List
+from pydantic import Field, BaseModel 
+from typing import Optional, List ,  Any , Dict
 
 class CodeReviewAction(Action):
     """Action for the Code Review environment - just a message to echo."""
@@ -38,7 +38,7 @@ class CodeReviewPullRequest(BaseModel):
 class CodeReviewObservation(Observation):
     """Observation from the Code Review environment - the echoed message."""
 
-    echoed_message: str = Field(default="", description="The echoed message")
+    #echoed_message: str = Field(default="", description="The echoed message")
     pr: CodeReviewPullRequest
     previous_comments: List[str]
     step_count: int
@@ -48,3 +48,9 @@ class CodeReviewObservation(Observation):
 class CodeReviewReward(BaseModel):
     score: float
     feedback: str
+
+class CodeReviewStepResponse(BaseModel):
+    observation: CodeReviewObservation
+    reward: CodeReviewReward
+    done: bool
+    info: Dict[str, Any] = {}

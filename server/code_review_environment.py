@@ -22,6 +22,7 @@ try:
         CodeReviewObservation,
         CodeReviewReward,
         CodeReviewPullRequest,
+        CodeReviewStepResponse
     )
 except ImportError:
     from models import (
@@ -78,6 +79,7 @@ class CodeReviewEnvironment(Environment):
         """
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count += 1
+        self.task_index += 1
 
         self.sample = self.dataset[self.task_index % len(self.dataset)]
 
@@ -94,7 +96,7 @@ class CodeReviewEnvironment(Environment):
         self.fix_attempted = False
 
         return CodeReviewObservation(
-            echoed_message="Code Review environment ready!",
+            #echoed_message="Code Review environment ready!",
             pr=self.pr,
             previous_comments=self.history,
             step_count=self.step_count,
@@ -114,9 +116,26 @@ class CodeReviewEnvironment(Environment):
             CodeReviewObservation with the echoed message and its length
         """
         self._state.step_count += 1
+        # print("RAW ACTION TYPE:", type(action))
+        # print("RAW ACTION:", action)
 
         try:
-            action = CodeReviewAction(**action)
+            if isinstance(action, dict):
+                action = CodeReviewAction(**action)
+
+            elif isinstance(action, (list, tuple)):
+                action = CodeReviewAction(
+                    action_type=action[0],
+                    comment=action[1] if len(action) > 1 else None,
+                    suggested_code=action[2] if len(action) > 2 else None,
+                    decision=action[3] if len(action) > 3 else None,
+                )
+
+            elif isinstance(action, CodeReviewAction):
+                pass
+
+            else:
+                raise ValueError(f"Unsupported action type: {type(action)}")
         except Exception as e:
             print(f"Error occurred while processing action: {e}")
             return self._invalid_step()
@@ -153,6 +172,7 @@ class CodeReviewEnvironment(Environment):
 
         score += bonus
         score = max(0.0, min(score, 1.0))
+        # print("Final Score == " , score)
 
         done = (
             action.action_type == "final_decision" or self.step_count >= self.max_steps
@@ -161,17 +181,31 @@ class CodeReviewEnvironment(Environment):
         if done:
             score = max([self.grade_action(a, self.gt) for a in self.history] or [0.0])
 
-        return (
-            CodeReviewObservation(
-                echoed_message="Code Review Step Completed",
+        # print(type(CodeReviewObservation))
+        # print(type(CodeReviewReward))
+
+        obs =  CodeReviewObservation(
                 pr=self.pr,
                 previous_comments=[a.comment for a in self.history if a.comment],
                 step_count=self.step_count,
                 max_steps=self.max_steps,
-            ),
-            CodeReviewReward(score=score, feedback="graded"),
-            done,
-            {
+            )
+        # print("Obs == " , obs)
+
+        rew =  CodeReviewReward(
+                score=score,
+                feedback="graded"
+            )
+
+        # print("FINAL REWARD TYPE:", type(rew))
+        # print("FINAL REWARD:", rew)
+        # print("Got the culprit I guess....")
+
+        return CodeReviewStepResponse(
+            observation=obs,
+            reward=rew,
+            done=done,
+            info={
                 "task_type": self.task_type,
                 "issues_identified": len(self.issues_identified),
                 "fix_attempted": self.fix_attempted,
@@ -189,18 +223,21 @@ class CodeReviewEnvironment(Environment):
         return self._state
 
     def _invalid_step(self):
-        return (
-            CodeReviewObservation(
+        rew =  CodeReviewReward(score=0.0, feedback="invalid action")
+        obs =  CodeReviewObservation(
                 echoed_message="Invalid action format. Please send a valid CodeReviewAction.",
                 pr=self.pr,
                 previous_comments=[a.comment for a in self.history if a.comment],
                 step_count=self.step_count,
                 max_steps=self.max_steps,
-            ),
-            CodeReviewReward(score=0.0, feedback="invalid action"),
-            True,  # Terminate step on invalid action
-            {"error": "invalid_action"},
+            )
+        return CodeReviewStepResponse(
+            observation=obs,
+            reward=rew,
+            done=True,
+            info={"error": "invalid_action"},
         )
+                
 
     def grade_action(self, action, ground_truth):
         score = 0.0
@@ -249,18 +286,11 @@ class CodeReviewEnvironment(Environment):
         if not comment or not issues:
             return 0.0
 
-        comment_tokens = set(self.normalize(comment).split())
-        total_score = 0.0
+        comment = self.normalize(comment)
 
-        for issue in issues:
-            issue_tokens = set(self.normalize(issue).split())
-            if not issue_tokens:
-                continue
-            # Token overlap — partial credit for semantic similarity
-            overlap = len(comment_tokens & issue_tokens) / len(issue_tokens)
-            total_score += min(overlap, 1.0)
+        matches = sum(1 for issue in issues if self.normalize(issue) in comment)
 
-        return total_score / len(issues)
+        return matches / len(issues)
 
     # ==============================
     # FIX MATCH (FUZZY)
@@ -272,18 +302,18 @@ class CodeReviewEnvironment(Environment):
         expected_fix = self.normalize(ground_truth.get("fix", ""))
         suggested_code = self.normalize(suggested_code)
 
+        # direct match
         if expected_fix in suggested_code:
             return 1.0
 
-        # Token overlap instead of exact keyword match
-        expected_tokens = set(expected_fix.split())
-        suggested_tokens = set(suggested_code.split())
-
-        if not expected_tokens:
+        # partial keyword match
+        keywords = expected_fix.split()
+        if not keywords:
             return 0.0
 
-        overlap = len(expected_tokens & suggested_tokens) / len(expected_tokens)
-        return overlap
+        matches = sum(1 for word in keywords if word in suggested_code)
+
+        return matches / len(keywords)
 
     # ==============================
     # DECISION MATCH
@@ -305,3 +335,4 @@ class CodeReviewEnvironment(Environment):
 
         # Wrong decision → partial penalty (not negative)
         return 0.2
+

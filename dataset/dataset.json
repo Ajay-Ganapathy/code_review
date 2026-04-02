@@ -1,24 +1,5 @@
 [
-  {
-    "task_type": "easy",
-    "pr": {
-      "id": "1",
-      "title": "Fix comparison bug",
-      "description": "Bug in condition",
-      "language": "python",
-      "diffs": [
-        {
-          "file_name": "calculate.py",
-          "diff": "- if (x = 5) {}\n+ if (x == 5) {}"
-        }
-      ]
-    },
-    "ground_truth": {
-      "issues": ["assignment instead of comparison"],
-      "decision": "reject",
-      "fix": "use == instead of ="
-    }
-  },
+ 
   {
     "task_type": "easy",
     "pr": {
@@ -79,6 +60,7 @@
       "fix": "use 'if target in arr'"
     }
   },
+ 
   {
     "task_type": "hard",
     "pr": {
@@ -142,25 +124,6 @@
       "decision": "reject",
       "fix": "validate id before calling get_user"
     }
-  },
-  {
-  "task_type": "easy",
-  "pr": {
-    "id": "9",
-    "title": "Fix typo in variable name",
-    "description": "Corrects a typo causing runtime error",
-    "language": "python",
-    "diffs": [
-      {
-        "file_name": "main.py",
-        "diff": "def greet(name):\n    print('Hello ' + nmae)"
-      }
-    ]
-  },
-  "ground_truth": {
-    "issues": ["variable name typo"],
-    "decision": "reject",
-    "fix": "replace nmae with name"
   }
-}
+
 ]
