@@ -26,9 +26,9 @@ import asyncio
 from code_review import CodeReviewAction, CodeReviewObservation
 from code_review.client import CodeReviewEnv
 
-API_BASE_URL = "https://router.huggingface.co/v1"
-API_KEY = os.getenv("HF_TOKEN")
-MODEL_NAME = os.getenv("MODEL_NAME")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+API_KEY = os.getenv("HF_TOKEN") or "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"
+MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
 TASK_NAME = "code_review"
 BENCHMARK = "code_review_benchmark"
 MAX_STEPS = 3
@@ -235,7 +235,9 @@ async def run_episode(client, env):
         reward = result.reward
         done = result.done
 
-        log_step(step=step, action=response_text, reward=reward.score, done=done, error=None)
+        log_step(
+            step=step, action=response_text, reward=reward.score, done=done, error=None
+        )
         final_score = max(final_score, reward.score if reward else 0.0)
 
     return final_score
@@ -259,7 +261,12 @@ async def main():
     total_score = sum(scores) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
     final_score = min(max(score, 0.0), 1.0)  # clamp to [0, 1]
     success = final_score >= SUCCESS_SCORE_THRESHOLD
-    log_end(success=success, steps=NUM_EPISODES*MAX_STEPS, score=final_score, rewards=scores)
+    log_end(
+        success=success,
+        steps=NUM_EPISODES * MAX_STEPS,
+        score=final_score,
+        rewards=scores,
+    )
 
 
 if __name__ == "__main__":

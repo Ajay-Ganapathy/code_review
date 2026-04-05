@@ -12,12 +12,15 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import CodeReviewAction, CodeReviewObservation, CodeReviewReward , CodeReviewPullRequest
+from .models import (
+    CodeReviewAction,
+    CodeReviewObservation,
+    CodeReviewReward,
+    CodeReviewPullRequest,
+)
 
 
-class CodeReviewEnv(
-    EnvClient[CodeReviewAction, CodeReviewObservation, State]
-):
+class CodeReviewEnv(EnvClient[CodeReviewAction, CodeReviewObservation, State]):
     """
     Client for the Code Review Environment.
 
@@ -90,19 +93,14 @@ class CodeReviewEnv(
         """
         # print("Payload ====== ", payload)
 
-      
         obs_data = payload.get("observation") or {}
 
         if "observation" in obs_data:  # nested case
             obs_data = obs_data["observation"]
 
-     
-
-      
         if not obs_data or "pr" not in obs_data:
             raise ValueError(f"Invalid observation payload: {payload}")
 
-      
         pr_data = obs_data["pr"]
 
         observation = CodeReviewObservation(
