@@ -22,7 +22,7 @@ try:
         CodeReviewObservation,
         CodeReviewReward,
         CodeReviewPullRequest,
-        CodeReviewStepResponse
+        CodeReviewStepResponse,
     )
 except ImportError:
     from models import (
@@ -34,8 +34,32 @@ except ImportError:
 
 import json
 from pathlib import Path
+import re
+from difflib import SequenceMatcher
 
 dataset_path = Path(__file__).parent.parent / "dataset" / "dataset.json"
+
+STOP_WORDS = {
+    "use",
+    "the",
+    "a",
+    "an",
+    "to",
+    "and",
+    "or",
+    "of",
+    "in",
+    "for",
+    "with",
+    "is",
+    "it",
+    "on",
+    "at",
+    "by",
+    "from",
+    "that",
+}
+
 
 class CodeReviewEnvironment(Environment):
     """
@@ -96,7 +120,7 @@ class CodeReviewEnvironment(Environment):
         self.fix_attempted = False
 
         return CodeReviewObservation(
-            #echoed_message="Code Review environment ready!",
+            # echoed_message="Code Review environment ready!",
             pr=self.pr,
             previous_comments=self.history,
             step_count=self.step_count,
@@ -150,7 +174,7 @@ class CodeReviewEnvironment(Environment):
             self.fix_attempted = True
 
         score = self.grade_action(action, self.gt)
-        print(f"Step {self.step_count} - Score: {score:.4f}")
+        # print(f"Step {self.step_count} - Score: {score:.4f}")
 
         bonus = 0.0
 
@@ -184,18 +208,15 @@ class CodeReviewEnvironment(Environment):
         # print(type(CodeReviewObservation))
         # print(type(CodeReviewReward))
 
-        obs =  CodeReviewObservation(
-                pr=self.pr,
-                previous_comments=[a.comment for a in self.history if a.comment],
-                step_count=self.step_count,
-                max_steps=self.max_steps,
-            )
+        obs = CodeReviewObservation(
+            pr=self.pr,
+            previous_comments=[a.comment for a in self.history if a.comment],
+            step_count=self.step_count,
+            max_steps=self.max_steps,
+        )
         # print("Obs == " , obs)
 
-        rew =  CodeReviewReward(
-                score=score,
-                feedback="graded"
-            )
+        rew = CodeReviewReward(score=score, feedback="graded")
 
         # print("FINAL REWARD TYPE:", type(rew))
         # print("FINAL REWARD:", rew)
@@ -223,34 +244,33 @@ class CodeReviewEnvironment(Environment):
         return self._state
 
     def _invalid_step(self):
-        rew =  CodeReviewReward(score=0.0, feedback="invalid action")
-        obs =  CodeReviewObservation(
-                echoed_message="Invalid action format. Please send a valid CodeReviewAction.",
-                pr=self.pr,
-                previous_comments=[a.comment for a in self.history if a.comment],
-                step_count=self.step_count,
-                max_steps=self.max_steps,
-            )
+        rew = CodeReviewReward(score=0.0, feedback="invalid action")
+        obs = CodeReviewObservation(
+            echoed_message="Invalid action format. Please send a valid CodeReviewAction.",
+            pr=self.pr,
+            previous_comments=[a.comment for a in self.history if a.comment],
+            step_count=self.step_count,
+            max_steps=self.max_steps,
+        )
         return CodeReviewStepResponse(
             observation=obs,
             reward=rew,
             done=True,
             info={"error": "invalid_action"},
         )
-                
 
     def grade_action(self, action, ground_truth):
         score = 0.0
 
-        print("Action === ", action)
-        print("Ground truth === ", ground_truth)
+        # print("Action === ", action)
+        # print("Ground truth === ", ground_truth)
 
         # ------------------------------
         # ISSUE DETECTION (40%)
         # ------------------------------
         issue_score = self.score_issues(action.comment, ground_truth)
         score += 0.4 * issue_score
-        print("After Issue Score == ", issue_score)
+        # print("After Issue Score == ", issue_score)
 
         # ------------------------------
         # FIX QUALITY (30%)
@@ -258,7 +278,7 @@ class CodeReviewEnvironment(Environment):
         fix_score = self.score_fix(action.suggested_code, ground_truth)
         score += 0.3 * fix_score
 
-        print("After Fix Score == ", fix_score)
+        # print("After Fix Score == ", fix_score)
 
         # ------------------------------
         # DECISION (30%)
@@ -266,7 +286,7 @@ class CodeReviewEnvironment(Environment):
         decision_score = self.score_decision(action, ground_truth)
         score += 0.3 * decision_score
 
-        print("After Decision Score == ", decision_score)
+        # print("After Decision Score == ", decision_score)
 
         # ------------------------------
         # CLAMP SCORE
@@ -295,25 +315,40 @@ class CodeReviewEnvironment(Environment):
     # ==============================
     # FIX MATCH (FUZZY)
     # ==============================
-    def score_fix(self, suggested_code, ground_truth):
+    def score_fix(self, suggested_code: str, ground_truth: dict) -> float:
         if not suggested_code:
             return 0.0
 
         expected_fix = self.normalize(ground_truth.get("fix", ""))
         suggested_code = self.normalize(suggested_code)
 
-        # direct match
+        if not expected_fix:
+            return 0.0
+
+        # 1. Exact / substring match — full score
         if expected_fix in suggested_code:
             return 1.0
 
-        # partial keyword match
-        keywords = expected_fix.split()
-        if not keywords:
+        # 2. Token overlap ignoring stop words
+        def code_tokens(text: str) -> list[str]:
+            tokens = re.findall(r"[a-zA-Z_]\w*|\d+|[=<>!+\-*/]+", text)
+            return [t for t in tokens if t.lower() not in STOP_WORDS]
+
+        expected_tokens = code_tokens(expected_fix)
+        suggested_tokens = set(code_tokens(suggested_code))
+
+        if not expected_tokens:
             return 0.0
 
-        matches = sum(1 for word in keywords if word in suggested_code)
+        token_score = sum(1 for t in expected_tokens if t in suggested_tokens) / len(
+            expected_tokens
+        )
 
-        return matches / len(keywords)
+        # 3. Sequence similarity as a secondary signal
+        seq_score = SequenceMatcher(None, expected_fix, suggested_code).ratio()
+
+        # Weighted: token overlap matters more than character similarity
+        return round(0.7 * token_score + 0.3 * seq_score, 4)
 
     # ==============================
     # DECISION MATCH
@@ -335,4 +370,3 @@ class CodeReviewEnvironment(Environment):
 
         # Wrong decision → partial penalty (not negative)
         return 0.2
-

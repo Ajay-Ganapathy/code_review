@@ -1,5 +1,4 @@
 [
- 
   {
     "task_type": "easy",
     "pr": {
@@ -17,7 +16,7 @@
     "ground_truth": {
       "issues": ["missing import datetime"],
       "decision": "reject",
-      "fix": "from datetime import datetime"
+      "fix": "from datetime import datetime\nprint(datetime.now())"
     }
   },
   {
@@ -37,7 +36,7 @@
     "ground_truth": {
       "issues": ["division by zero"],
       "decision": "reject",
-      "fix": "if b == 0: return None"
+      "fix": "def divide(a, b):\n    if b == 0:\n        return None\n    return a / b"
     }
   },
   {
@@ -57,10 +56,9 @@
     "ground_truth": {
       "issues": ["inefficient loop"],
       "decision": "approve",
-      "fix": "use 'if target in arr'"
+      "fix": "return target in arr"
     }
   },
- 
   {
     "task_type": "hard",
     "pr": {
@@ -78,7 +76,7 @@
     "ground_truth": {
       "issues": ["hardcoded password", "security vulnerability"],
       "decision": "reject",
-      "fix": "use hashed password comparison"
+      "fix": "import bcrypt\n\ndef login(password, hashed_password):\n    return bcrypt.checkpw(password.encode(), hashed_password)"
     }
   },
   {
@@ -98,7 +96,7 @@
     "ground_truth": {
       "issues": ["sql injection"],
       "decision": "reject",
-      "fix": "use parameterized queries"
+      "fix": "query = \"SELECT * FROM users WHERE id = %s\"\ncursor.execute(query, (user_id,))"
     }
   },
   {
@@ -122,8 +120,7 @@
     "ground_truth": {
       "issues": ["invalid input", "null handling"],
       "decision": "reject",
-      "fix": "validate id before calling get_user"
+      "fix": "def get_user(id):\n    if id is None:\n        raise ValueError('id must not be None')\n    return db[id]\n\nuser = get_user(user_id)"
     }
   }
-
 ]

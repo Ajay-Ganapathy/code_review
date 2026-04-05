@@ -21,17 +21,25 @@ from typing import List, Optional, Dict, Any
 from openai import OpenAI
 import numpy as np
 import json
+import asyncio
 
 from code_review import CodeReviewAction, CodeReviewObservation
 from code_review.client import CodeReviewEnv
+
 API_BASE_URL = "https://router.huggingface.co/v1"
 API_KEY = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME")
+TASK_NAME = "code_review"
+BENCHMARK = "code_review_benchmark"
 MAX_STEPS = 3
 TEMPERATURE = 0.2
-MAX_TOKENS = 512
+MAX_TOKENS = 256
+NUM_EPISODES = 4
+_MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
+MAX_TOTAL_REWARD = NUM_EPISODES * MAX_STEPS * _MAX_REWARD_PER_STEP
+SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
 
-DEBUG = True
+
 ACTION_PREFIX_RE = re.compile(
     r"^(action|next action)\s*[:\-]\s*",
     re.IGNORECASE,
@@ -73,11 +81,34 @@ Return ONLY JSON:
 ).strip()
 
 
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(
+    step: int, action: str, reward: float, done: bool, error: Optional[str]
+) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
+        flush=True,
+    )
+
 
 def build_history_lines(history: List[str]) -> str:
     if not history:
         return "None"
     return "\n".join(history[-4:])
+
 
 def safe_completion(client, messages):
     for _ in range(3):
@@ -96,7 +127,6 @@ def safe_completion(client, messages):
 
 
 def build_prompt(step: int, max_steps: int, observation) -> str:
-    # print("Obeservation === " , observation)
     if step == 1:
         instruction = (
             "Carefully analyze the diff. List EVERY issue you find in the comment field. "
@@ -163,19 +193,20 @@ def parse_action(text: str) -> Dict[str, Any]:
     text = text.strip().replace("```json", "").replace("```", "")
 
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except Exception as e:
         print(e)
         return fallback_action()
 
+
 async def run_episode(client, env):
     result = await env.reset()
-    
     obs = result.observation
-
     final_score = 0.0
 
     for step in range(1, MAX_STEPS + 1):
+        if result.done:
+            break
 
         prompt = build_prompt(step, MAX_STEPS, obs)
 
@@ -185,14 +216,11 @@ async def run_episode(client, env):
         ]
 
         completion = safe_completion(client, messages)  # still sync
-        # print(completion)
         if completion is None:
             action = fallback_action()
         else:
             response_text = completion.choices[0].message.content or ""
             action_dict = parse_action(response_text)
-
-            # print(response_text)
 
             action = CodeReviewAction(
                 action_type=action_dict.get("action_type"),
@@ -202,47 +230,36 @@ async def run_episode(client, env):
             )
 
         result = await env.step(action)
-        # print("Result === " , result)
 
         obs = result.observation
         reward = result.reward
         done = result.done
 
+        log_step(step=step, action=response_text, reward=reward.score, done=done, error=None)
         final_score = max(final_score, reward.score if reward else 0.0)
-
-        print(f"Step {step} | Action: {action} | Reward: {reward}")
-
-        if done:
-            print(f"Done in {step} steps")
-            break
 
     return final_score
 
-import asyncio
 
 async def main():
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     scores = []
-    
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     async with CodeReviewEnv(base_url="http://localhost:8000") as env:
-        # print(env)
-        NUM_EPISODES=6
-        # print(NUM_EPISODES)
-        
         for i in range(NUM_EPISODES):
-            print(f"\n=== Episode {i+1} ===")
             env.task_index = i
 
             score = await run_episode(client, env)
             scores.append(score)
 
-            print(f"Scores so far: {scores}")
-            #return 0
+            # print(f"[INFO] Scores so far: {scores}", flush=True)
 
-    print("\nFinished all episodes")
-    print(f"Final Scores: {scores}")
+    total_score = sum(scores) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
+    final_score = min(max(score, 0.0), 1.0)  # clamp to [0, 1]
+    success = final_score >= SUCCESS_SCORE_THRESHOLD
+    log_end(success=success, steps=NUM_EPISODES*MAX_STEPS, score=final_score, rewards=scores)
 
 
 if __name__ == "__main__":
