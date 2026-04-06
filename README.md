@@ -1,19 +1,33 @@
----
-title: Code Review Environment Server
-emoji: 🎳
-colorFrom: green
-colorTo: gray
-sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
----
-
 # Code Review Environment
 
 A reinforcement learning benchmark environment where an agent acts as a senior software engineer reviewing pull requests. The agent must identify bugs, suggest fixes, and make approval decisions across progressively harder code review tasks.
+
+## Quick Start
+ 
+Install the OpenEnv core package:
+```bash
+pip install openenv-core
+```
+
+Clone the repo
+```bash
+git clone https://github.com/Ajay-Ganapathy/code_review && cd code_review
+```
+
+Install packages
+```bash
+uv pip install -e .
+```
+
+`[OPTIONAL]` To run server locally
+```bash
+uv run server --host 0.0.0.0 --port 8000
+```
+
+Run the agent in another terminal
+```bash
+uv run python inference.py
+```
 
 ## Motivation
  
@@ -137,33 +151,6 @@ Security vulnerabilities, injection attacks, and cross-file null-handling bugs.
 - For auth: detect the hardcoded secret and propose `bcrypt`-based password comparison.
 - For SQL: detect string concatenation and replace with a parameterized query (`%s` placeholder + `cursor.execute`).
 - For null bug: validate `id is not None` before the `db[id]` lookup, and fix the call site in `controller.py`.
-
-## Quick Start
- 
-Install the OpenEnv core package:
-```bash
-pip install openenv-core
-```
-
-Clone the repo
-```bash
-git clone https://github.com/Ajay-Ganapathy/code_review && cd code_review
-```
-
-Install packages
-```bash
-uv pip install -e .
-```
-
-`[OPTIONAL]` To run server locally
-```bash
-uv run server --host 0.0.0.0 --port 8000
-```
-
-Run the agent in another terminal
-```bash
-uv run python inference.py
-```
  
 The agent runs `NUM_EPISODES = 4` episodes (configurable) with each `MAX_STEPS = 3` and logs each step:
  
@@ -187,7 +174,7 @@ Key constants in `inference.py`:
 | `MAX_TOKENS` | `256` | Max tokens per LLM response |
 | `SUCCESS_SCORE_THRESHOLD` | `0.1` | Minimum normalized score to count as success |
 
-### Score Interpretation
+## Score Interpretation
  
 | Score Range | Interpretation |
 |-------------|---------------|
@@ -196,88 +183,7 @@ Key constants in `inference.py`:
 | 0.50 – 0.75 | Competent — agent handles easy and medium tasks; struggles with hard security/null cases |
 | 0.75 – 1.00 | Strong — agent reliably detects all issue types, generates correct fixes, and makes sound decisions |
 
+## Conclusion
+ 
+The Code Review Environment provides a structured, reproducible benchmark for evaluating LLM-based agents on one of the most practically valuable tasks in software engineering. By decomposing the review process into three distinct steps — issue detection, fix generation, and final judgment — it rewards agents that reason carefully rather than those that simply pattern-match on surface-level symptoms.
 
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
-
-```bash
-# From project root
-docker build -t code_review-env:latest -f server/Dockerfile .
-```
-
-## Deploying to Hugging Face Spaces
-
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
-```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
-```
-
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-
-## Project Structure
-
-```
-code_review/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # CodeReviewEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── code_review_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```
