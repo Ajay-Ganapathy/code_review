@@ -1,3 +1,16 @@
+---
+title: Code Review Environment Server
+emoji: 🎳
+colorFrom: green
+colorTo: gray
+sdk: docker
+pinned: false
+app_port: 8000
+base_path: /web
+tags:
+  - openenv
+---
+
 # Code Review Environment
 
 A reinforcement learning benchmark environment where an agent acts as a senior software engineer reviewing pull requests. The agent must identify bugs, suggest fixes, and make approval decisions across progressively harder code review tasks.
