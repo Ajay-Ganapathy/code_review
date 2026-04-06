@@ -247,7 +247,7 @@ async def main():
     scores = []
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
-    async with CodeReviewEnv(base_url="http://h1manshu-code-review.hf.space") as env:
+    async with CodeReviewEnv(base_url="https://h1manshu-code-review.hf.space") as env:
         for i in range(NUM_EPISODES):
             env.task_index = i
 
