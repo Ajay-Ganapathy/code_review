@@ -27,7 +27,7 @@ from code_review import CodeReviewAction, CodeReviewObservation
 from code_review.client import CodeReviewEnv
 
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-API_KEY = os.getenv("HF_TOKEN") or "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"
+API_KEY = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
 TASK_NAME = "code_review"
 BENCHMARK = "code_review_benchmark"
@@ -68,6 +68,8 @@ Rules:
 - Mention every issue explicitly
 - Use precise technical language
 - Write detailed comments (>30 characters)
+- All string values in the JSON must use \\n for newlines, never literal line breaks
+- Return ONLY raw JSON — no markdown fences, no preamble
 
 Return ONLY JSON:
 
@@ -249,7 +251,7 @@ async def main():
     scores = []
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
-    async with CodeReviewEnv(base_url="http://localhost:8000") as env:
+    async with CodeReviewEnv(base_url="https://h1manshu-code-review.hf.space") as env:
         for i in range(NUM_EPISODES):
             env.task_index = i
 

@@ -30,6 +30,7 @@ except ImportError:
         CodeReviewObservation,
         CodeReviewReward,
         CodeReviewPullRequest,
+        CodeReviewStepResponse,
     )
 
 import json

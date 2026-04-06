@@ -13,43 +13,181 @@ tags:
 
 # Code Review Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+A reinforcement learning benchmark environment where an agent acts as a senior software engineer reviewing pull requests. The agent must identify bugs, suggest fixes, and make approval decisions across progressively harder code review tasks.
+
+## Motivation
+ 
+Code review is a high-stakes, multi-step reasoning task that requires an agent to:
+ 
+- **Detect bugs and security vulnerabilities** from raw code diffs
+- **Generate corrective code** that resolves identified issues
+- **Make a final judgment** (approve/reject) backed by technical reasoning
+ 
+Existing benchmarks test code generation or comprehension in isolation. This environment tests the full review loop — detection, remediation, and decision-making — in a structured, scorable way. It is designed to evaluate whether LLMs can act as reliable automated reviewers in software development pipelines.
+
+## Environment Description
+ 
+The agent receives a pull request observation at each step and must respond with a structured JSON action. The episode runs for up to `MAX_STEPS = 3` steps, following a prescribed workflow:
+ 
+| Step | Expected Action | Purpose |
+|------|----------------|---------|
+| 1 | `comment` | Identify all issues in the diff |
+| 2 | `suggest_fix` | Provide corrected code |
+| 3 | `final_decision` | Approve or reject the PR |
+ 
+Each step is independently scored, and the final episode score is the maximum score achieved across all steps.
+
+## Action Space
+ 
+Actions are instances of `CodeReviewAction` and must be returned as JSON with the following fields:
+ 
+```json
+{
+  "action_type": "comment | suggest_fix | final_decision",
+  "comment": "Detailed description of identified issues (>30 characters)",
+  "suggested_code": "Corrected code snippet, or null if not applicable",
+  "decision": "approve | reject | null"
+}
+```
+ 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action_type` | `str` | Always | One of `comment`, `suggest_fix`, `final_decision` |
+| `comment` | `str` | Recommended | Technical description of issues found |
+| `suggested_code` | `str \| null` | Step 2 | Corrected code replacing the buggy diff |
+| `decision` | `str \| null` | Step 3 | `approve` or `reject`; `null` otherwise |
+
+## Observation Space
+ 
+Each step returns a `CodeReviewObservation` with the following fields:
+ 
+| Field | Type | Description |
+|-------|------|-------------|
+| `pr` | `CodeReviewPullRequest` | The pull request under review |
+| `pr.id` | `str` | Unique PR identifier |
+| `pr.title` | `str` | Short title of the PR |
+| `pr.description` | `str` | Brief description of intent |
+| `pr.language` | `str` | Programming language (e.g. `python`) |
+| `pr.diffs` | `List[CodeDiff]` | List of file diffs |
+| `pr.diffs[].file_name` | `str` | Name of the changed file |
+| `pr.diffs[].diff` | `str` | The actual code change |
+| `previous_comments` | `List[str]` | Comments made in prior steps |
+| `step_count` | `int` | Current step number |
+| `max_steps` | `int` | Maximum steps per episode (default: 3) |
+
+## Scoring
+ 
+Each action is scored across three components:
+ 
+| Component | Weight | Method |
+|-----------|--------|--------|
+| Issue Detection | 40% | Fraction of ground-truth issues mentioned in `comment` |
+| Fix Quality | 30% | Token overlap + sequence similarity between `suggested_code` and ground-truth fix |
+| Decision Accuracy | 30% | Exact match with ground-truth `approve`/`reject`; partial credit (0.2) for wrong decision |
+ 
+**Bonuses and penalties applied per step:**
+ 
+- `+0.1` — comment length > 30 characters (encourages detail)
+- `+0.1` — correct final decision reached in step ≤ 2 (encourages efficiency)
+- `-0.1` — no comment provided on a non-decision step (penalizes lazy steps)
+- `-0.05` — step count exceeds 3 (penalizes long trajectories)
+ 
+The final episode score is the **maximum** `grade_action` score across all steps in the episode. Scores are clamped to `[0.0, 1.0]`.
+
+## Task Descriptions
+ 
+The dataset contains tasks at three difficulty levels:
+ 
+### Easy
+ 
+Straightforward single-file issues with an obvious fix.
+ 
+| PR | Issue | Expected Decision |
+|----|-------|------------------|
+| Missing import | `datetime` used without import | reject |
+ 
+**What the agent must do:** Detect the missing `from datetime import datetime` statement and supply the corrected import.
+ 
+---
+ 
+### Medium
+ 
+Logical or performance issues requiring understanding of Python semantics.
+ 
+| PR | Issue | Expected Decision |
+|----|-------|------------------|
+| Division function | No guard against division by zero | reject |
+| Inefficient loop | `range(len(arr))` pattern; can use `in` operator | approve |
+ 
+**What the agent must do:** For the division task, add a `if b == 0: return None` guard. For the loop task, recognize it as a style/efficiency issue but not a correctness bug — the correct decision is **approve**.
+ 
+---
+ 
+### Hard
+ 
+Security vulnerabilities, injection attacks, and cross-file null-handling bugs.
+ 
+| PR | Issue | Expected Decision |
+|----|-------|------------------|
+| Authentication logic | Hardcoded plaintext password `admin123` | reject |
+| SQL query | String concatenation exposes SQL injection | reject |
+| Cross-file null bug | `get_user(None)` called without input validation | reject |
+ 
+**What the agent must do:**
+- For auth: detect the hardcoded secret and propose `bcrypt`-based password comparison.
+- For SQL: detect string concatenation and replace with a parameterized query (`%s` placeholder + `cursor.execute`).
+- For null bug: validate `id is not None` before the `db[id]` lookup, and fix the call site in `controller.py`.
 
 ## Quick Start
+ 
+### Run Locally
+Start the environment server, then run inference:
+ 
+```bash
+# Terminal 1 — download code_review repo
+git clone https://github.com/Ajay-Ganapathy/code_review && cd code_review
 
-The simplest way to use the Code Review environment is through the `CodeReviewEnv` class:
+# Terminal 1 — install packages
+uv pip install -e .
 
-```python
-from code_review import CodeReviewAction, CodeReviewEnv
-
-try:
-    # Create environment from Docker image
-    code_reviewenv = CodeReviewEnv.from_docker_image("code_review-env:latest")
-
-    # Reset
-    result = code_reviewenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = code_reviewenv.step(CodeReviewAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    code_reviewenv.close()
+# Terminal 1 — Run server locally
+uv run server --host 0.0.0.0 --port 8000
+ 
+# Terminal 2 — run the agent
+uv run python inference.py
+```
+ 
+The agent runs `NUM_EPISODES = 4` episodes (configurable) with each `MAX_STEPS = 3` and logs each step:
+ 
+```
+[START] task=code_review env=code_review_benchmark model=meta-llama/Llama-3.1-8B-Instruct
+[STEP] step=1 action=... reward=0.55 done=false error=null
+[STEP] step=2 action=... reward=0.72 done=false error=null
+[STEP] step=3 action=... reward=0.85 done=true error=null
+[END] success=true steps=12 score=0.850 rewards=0.55,0.72,0.85,0.60
 ```
 
-That's it! The `CodeReviewEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+## Configuration
+ 
+Key constants in `inference.py`:
+ 
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_STEPS` | `3` | Steps per episode |
+| `NUM_EPISODES` | `4` | Number of PRs to review |
+| `TEMPERATURE` | `0.2` | Sampling temperature (lower = more deterministic) |
+| `MAX_TOKENS` | `256` | Max tokens per LLM response |
+| `SUCCESS_SCORE_THRESHOLD` | `0.1` | Minimum normalized score to count as success |
+
+### Score Interpretation
+ 
+| Score Range | Interpretation |
+|-------------|---------------|
+| 0.00 – 0.20 | Failing — agent cannot follow the JSON schema or identify basic issues |
+| 0.20 – 0.50 | Partial — agent detects some issues but misses security vulnerabilities or gives wrong decisions |
+| 0.50 – 0.75 | Competent — agent handles easy and medium tasks; struggles with hard security/null cases |
+| 0.75 – 1.00 | Strong — agent reliably detects all issue types, generates correct fixes, and makes sound decisions |
+
 
 ## Building the Docker Image
 
@@ -116,124 +254,6 @@ The deployed space includes:
 - **Health Check** at `/health` - Container health monitoring
 - **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
 
-## Environment Details
-
-### Action
-**CodeReviewAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**CodeReviewObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Code Review environment server running, you can connect directly:
-
-```python
-from code_review import CodeReviewEnv
-
-# Connect to existing server
-code_reviewenv = CodeReviewEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = code_reviewenv.reset()
-result = code_reviewenv.step(CodeReviewAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `code_reviewenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from code_review import CodeReviewAction, CodeReviewEnv
-
-# Connect with context manager (auto-connects and closes)
-with CodeReviewEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(CodeReviewAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    CodeReviewEnvironment,  # Pass class, not instance
-    CodeReviewAction,
-    CodeReviewObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from code_review import CodeReviewAction, CodeReviewEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with CodeReviewEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(CodeReviewAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/code_review_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
 
 ## Project Structure
 
