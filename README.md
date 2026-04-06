@@ -144,13 +144,24 @@ Install the OpenEnv core package:
 ```bash
 pip install openenv-core
 ```
-# Terminal 1 — install packages
-uv pip install -e .
 
-# Terminal 1 — Run server locally
+Clone the repo
+```bash
+git clone https://github.com/Ajay-Ganapathy/code_review && cd code_review
+```
+
+Install packages
+```bash
+uv pip install -e .
+```
+
+`[OPTIONAL]` To run server locally
+```bash
 uv run server --host 0.0.0.0 --port 8000
- 
-# Terminal 2 — run the agent
+```
+
+Run the agent in another terminal
+```bash
 uv run python inference.py
 ```
  

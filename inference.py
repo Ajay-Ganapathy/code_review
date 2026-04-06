@@ -233,10 +233,7 @@ async def run_episode(client, env):
         reward = result.reward
         done = result.done
 
-
-        log_step(
-            step=step, action=response_text, reward=reward , done=done, error=None
-        )
+        log_step(step=step, action=response_text, reward=reward, done=done, error=None)
         final_score = max(final_score, reward if reward else 0.0)
 
     return final_score
