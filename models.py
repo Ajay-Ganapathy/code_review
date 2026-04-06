@@ -55,6 +55,6 @@ class CodeReviewReward(BaseModel):
 
 class CodeReviewStepResponse(BaseModel):
     observation: CodeReviewObservation
-    reward: CodeReviewReward
+    reward: float
     done: bool
     info: Dict[str, Any] = {}

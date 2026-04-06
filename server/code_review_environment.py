@@ -218,6 +218,7 @@ class CodeReviewEnvironment(Environment):
         # print("Obs == " , obs)
 
         rew = CodeReviewReward(score=score, feedback="graded")
+        print("Score == " , type(rew.score) , " --- " , rew.score)
 
         # print("FINAL REWARD TYPE:", type(rew))
         # print("FINAL REWARD:", rew)
@@ -225,7 +226,7 @@ class CodeReviewEnvironment(Environment):
 
         return CodeReviewStepResponse(
             observation=obs,
-            reward=rew,
+            reward=rew.score,
             done=done,
             info={
                 "task_type": self.task_type,

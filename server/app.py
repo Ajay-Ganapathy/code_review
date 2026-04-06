@@ -74,10 +74,11 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
+    host = "0.0.0.0"
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=args.port)
 
 
 if __name__ == "__main__":

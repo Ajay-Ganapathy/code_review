@@ -113,11 +113,15 @@ class CodeReviewEnv(EnvClient[CodeReviewAction, CodeReviewObservation, State]):
         # Handle reward (reset vs step)
         reward_data = payload.get("reward")
         reward = None
+       
+        if reward_data is not None:
+            try:
+                reward = float(reward_data)
+            except Exception:
+                reward = None
+           
 
-        if isinstance(reward_data, dict):
-            reward = CodeReviewReward(**reward_data)
-        # else: float/None → ignore (reset case)
-
+      
         return StepResult(
             observation=observation,
             reward=reward,
