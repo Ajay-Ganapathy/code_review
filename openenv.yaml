@@ -4,20 +4,3 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-tasks:
-  - id: task1
-    description: Missing import detection
-    max_steps: 3
-  - id: task2
-    description: Division by zero handling
-    max_steps: 3
-  - id: task3
-    description: SQL injection vulnerability
-    max_steps: 3
-  - id: task4
-    description: Hardcoded password security vulnerability
-    max_steps: 3
-endpoints:
-  reset: /reset
-  step: /step
-  health: /health
