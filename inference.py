@@ -34,7 +34,7 @@ BENCHMARK = "code_review_benchmark"
 MAX_STEPS = 3
 TEMPERATURE = 0.2
 MAX_TOKENS = 256
-NUM_EPISODES = 6
+NUM_EPISODES = 16
 _MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
 MAX_TOTAL_REWARD = NUM_EPISODES * MAX_STEPS * _MAX_REWARD_PER_STEP
 SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
@@ -235,7 +235,7 @@ async def run_episode(client, env):
 
         action_str = action_dict.get("action_type", "unknown")
         log_step(step=step, action=action_str, reward=reward, done=done, error=None)
-        
+
         final_score = max(final_score, reward if reward else 0.0)
 
     return final_score
@@ -250,8 +250,6 @@ async def main():
 
         for i in range(NUM_EPISODES):
             task_name = f"task_{i+1}"
-
-            # START log must use task id from openenv.yaml
             log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
             env.task_index = i

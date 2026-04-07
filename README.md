@@ -165,7 +165,7 @@ Security vulnerabilities, injection attacks, and cross-file null-handling bugs.
 - For SQL: detect string concatenation and replace with a parameterized query (`%s` placeholder + `cursor.execute`).
 - For null bug: validate `id is not None` before the `db[id]` lookup, and fix the call site in `controller.py`.
  
-The agent runs `NUM_EPISODES = 4` episodes (configurable) with each `MAX_STEPS = 3` and logs each step:
+The agent runs `NUM_EPISODES = 16` episodes (configurable) with each `MAX_STEPS = 3` and logs each step:
  
 ```
 [START] task=code_review env=code_review_benchmark model=meta-llama/Llama-3.1-8B-Instruct
@@ -182,7 +182,7 @@ Key constants in `inference.py`:
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `MAX_STEPS` | `3` | Steps per episode |
-| `NUM_EPISODES` | `4` | Number of PRs to review |
+| `NUM_EPISODES` | `16` | Number of PRs to review |
 | `TEMPERATURE` | `0.2` | Sampling temperature (lower = more deterministic) |
 | `MAX_TOKENS` | `256` | Max tokens per LLM response |
 | `SUCCESS_SCORE_THRESHOLD` | `0.1` | Minimum normalized score to count as success |
