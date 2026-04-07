@@ -4,3 +4,32 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
+tasks:
+  - id: task_1
+    description: "Easy — missing import detection"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+  - id: task_2
+    description: "Medium — division by zero handling"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+  - id: task_3
+    description: "Medium — inefficient loop optimization"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+  - id: task_4
+    description: "Hard — hardcoded password security vulnerability"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+  - id: task_5
+    description: "Hard — SQL injection vulnerability"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+  - id: task_6
+    description: "Hard — cross-file null handling bug"
+    max_steps: 3
+    grader: graders:CodeReviewGrader
+endpoints:
+  reset: /reset
+  step: /step
+  health: /health
