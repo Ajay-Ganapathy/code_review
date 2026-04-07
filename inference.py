@@ -233,7 +233,9 @@ async def run_episode(client, env):
         reward = result.reward
         done = result.done
 
-        log_step(step=step, action=response_text, reward=reward, done=done, error=None)
+        action_str = action_dict.get("action_type", "unknown")
+        log_step(step=step, action=action_str, reward=reward, done=done, error=None)
+        
         final_score = max(final_score, reward if reward else 0.0)
 
     return final_score
@@ -243,26 +245,26 @@ async def main():
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     scores = []
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     async with CodeReviewEnv(base_url="https://h1manshu-code-review.hf.space") as env:
+
         for i in range(NUM_EPISODES):
+            task_name = f"task_{i+1}"
+
+            # START log must use task id from openenv.yaml
+            log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
+
             env.task_index = i
 
             score = await run_episode(client, env)
             scores.append(score)
 
-            # print(f"[INFO] Scores so far: {scores}", flush=True)
-
-    total_score = sum(scores)
-    final_score = total_score / NUM_EPISODES
-    success = final_score >= SUCCESS_SCORE_THRESHOLD
-    log_end(
-        success=success,
-        steps=NUM_EPISODES * MAX_STEPS,
-        score=final_score,
-        rewards=scores,
-    )
+            log_end(
+                success=score >= SUCCESS_SCORE_THRESHOLD,
+                steps=MAX_STEPS,
+                score=score,
+                rewards=[score],
+            )
 
 
 if __name__ == "__main__":
