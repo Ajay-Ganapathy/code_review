@@ -196,7 +196,7 @@ class CodeReviewEnvironment(Environment):
             bonus -= 0.05
 
         score += bonus
-        score = max(0.0, min(score, 1.0))
+        score = max(0.01, min(score, 0.99))
         # print("Final Score == " , score)
 
         done = (
