@@ -205,9 +205,7 @@ class CodeReviewEnvironment(Environment):
 
         if done:
             score = max([self.grade_action(a, self.gt) for a in self.history] or [0.0])
-
-        # print(type(CodeReviewObservation))
-        # print(type(CodeReviewReward))
+            score = max(0.01, min(score, 0.99))
 
         obs = CodeReviewObservation(
             pr=self.pr,
@@ -293,7 +291,7 @@ class CodeReviewEnvironment(Environment):
         # ------------------------------
         # CLAMP SCORE
         # ------------------------------
-        score = max(0.0, min(score, 1.0))
+        score = max(0.01, min(score, 0.99))
 
         return score
 
