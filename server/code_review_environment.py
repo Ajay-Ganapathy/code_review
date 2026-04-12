@@ -7,8 +7,8 @@
 """
 Code Review Environment Implementation.
 
-A simple test environment that echoes back messages sent to it.
-Perfect for testing HTTP server infrastructure.
+Supports three grader difficulty levels: "easy", "medium", "hard".
+Pass `grader_level` to the constructor to select the desired tier.
 """
 
 from uuid import uuid4
@@ -35,93 +35,65 @@ except ImportError:
 
 import json
 from pathlib import Path
-import re
-from difflib import SequenceMatcher
+
+try:
+    from .graders import get_grader
+except ImportError:
+    from graders import get_grader
 
 dataset_path = Path(__file__).parent.parent / "dataset" / "dataset.json"
-
-STOP_WORDS = {
-    "use",
-    "the",
-    "a",
-    "an",
-    "to",
-    "and",
-    "or",
-    "of",
-    "in",
-    "for",
-    "with",
-    "is",
-    "it",
-    "on",
-    "at",
-    "by",
-    "from",
-    "that",
-}
 
 
 class CodeReviewEnvironment(Environment):
     """
-    A simple echo environment that echoes back messages.
+    Code Review environment with configurable grading difficulty.
 
-    This environment is designed for testing the HTTP server infrastructure.
-    It maintains minimal state and simply echoes back whatever message it receives.
+    Args:
+        grader_level: Grading difficulty — one of "easy", "medium", "hard".
+                      Defaults to "medium".
 
     Example:
-        >>> env = CodeReviewEnvironment()
+        >>> env = CodeReviewEnvironment(grader_level="hard")
         >>> obs = env.reset()
-        >>> print(obs.echoed_message)  # "Code Review environment ready!"
-        >>>
-        >>> obs = env.step(CodeReviewAction(message="Hello"))
-        >>> print(obs.echoed_message)  # "Hello"
-        >>> print(obs.message_length)  # 5
+        >>> obs = env.step(CodeReviewAction(action_type="final_decision", decision="approve"))
     """
 
-    # Enable concurrent WebSocket sessions.
-    # Set to True if your environment isolates state between instances.
-    # When True, multiple WebSocket clients can connect simultaneously, each
-    # getting their own environment instance (when using factory mode in app.py).
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
-    def __init__(self):
-        """Initialize the code_review environment."""
+    def __init__(self, grader_level: str = "medium"):
+        """Initialise the environment with the chosen grader tier."""
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count = 0
         self.max_steps = 5
         self.task_index = 0
+
         with open(dataset_path) as f:
             self.dataset = json.load(f)
+
         self.reset()
 
     def reset(self) -> CodeReviewObservation:
-        """
-        Reset the environment.
-
-        Returns:
-            CodeReviewObservation with a ready message
-        """
+        """Reset the environment and advance to the next task."""
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count += 1
         self.task_index += 1
 
         self.sample = self.dataset[self.task_index % len(self.dataset)]
 
-        self.pr = CodeReviewPullRequest(**self.sample["pr"])
-        self.gt = self.sample["ground_truth"]
+        self.pr        = CodeReviewPullRequest(**self.sample["pr"])
+        self.gt        = self.sample["ground_truth"]
         self.task_type = self.sample.get("task_type", "unknown")
+        grader_level = self.task_type if self.task_type in ("easy", "medium", "hard") else "medium"
+        self.grader = get_grader(grader_level)
+        self.grader_level = grader_level
 
-        self.history = []
-        self.step_count = 0
-        self.done = False
-
-        # State evolution variables
-        self.issues_identified = []
-        self.fix_attempted = False
+        self.history            = []
+        self.step_count         = 0
+        self.done               = False
+        self.issues_identified  = []
+        self.fix_attempted      = False
 
         return CodeReviewObservation(
-            # echoed_message="Code Review environment ready!",
             pr=self.pr,
             previous_comments=self.history,
             step_count=self.step_count,
@@ -130,41 +102,34 @@ class CodeReviewEnvironment(Environment):
             done=False,
         )
 
-    def step(self, action: CodeReviewAction) -> CodeReviewObservation:  # type: ignore[override]
-        """
-        Execute a step in the environment by echoing the message.
-
-        Args:
-            action: CodeReviewAction containing the message to echo
-
-        Returns:
-            CodeReviewObservation with the echoed message and its length
-        """
+    def step(self, action: CodeReviewAction) -> CodeReviewStepResponse:  # type: ignore[override]
+        """Execute one step: grade the action and return an observation + reward."""
         self._state.step_count += 1
-        # print("RAW ACTION TYPE:", type(action))
-        # print("RAW ACTION:", action)
 
+        # ------------------------------------------------------------------
+        # Normalise action into a CodeReviewAction object
+        # ------------------------------------------------------------------
         try:
             if isinstance(action, dict):
                 action = CodeReviewAction(**action)
-
             elif isinstance(action, (list, tuple)):
                 action = CodeReviewAction(
                     action_type=action[0],
-                    comment=action[1] if len(action) > 1 else None,
+                    comment=action[1]      if len(action) > 1 else None,
                     suggested_code=action[2] if len(action) > 2 else None,
-                    decision=action[3] if len(action) > 3 else None,
+                    decision=action[3]     if len(action) > 3 else None,
                 )
-
             elif isinstance(action, CodeReviewAction):
                 pass
-
             else:
                 raise ValueError(f"Unsupported action type: {type(action)}")
         except Exception as e:
-            print(f"Error occurred while processing action: {e}")
+            print(f"Error processing action: {e}")
             return self._invalid_step()
 
+        # ------------------------------------------------------------------
+        # Update state
+        # ------------------------------------------------------------------
         self.step_count += 1
         self.history.append(action)
 
@@ -174,79 +139,54 @@ class CodeReviewEnvironment(Environment):
         if action.action_type == "suggest_fix":
             self.fix_attempted = True
 
-        score = self.grade_action(action, self.gt)
-        # print(f"Step {self.step_count} - Score: {score:.4f}")
+        # ------------------------------------------------------------------
+        # Score via the active grader
+        # ------------------------------------------------------------------
+        score = self.grader.grade_action(action, self.gt)
+        bonus = self.grader.compute_step_bonus(action, self.step_count, self.history)
 
-        bonus = 0.0
-
-        # Encourage meaningful comments
-        if action.comment and len(action.comment) > 30:
-            bonus += 0.1
-
-        # Encourage early correct decisions
-        if action.action_type == "final_decision" and self.step_count <= 2:
-            bonus += 0.1
-
-        # Penalize useless steps
-        if not action.comment and action.action_type != "final_decision":
-            bonus -= 0.1
-
-        # Penalize long trajectories
-        if self.step_count > 3:
-            bonus -= 0.05
-
-        score += bonus
-        score = max(0.01, min(score, 0.99))
-        # print("Final Score == " , score)
+        score = max(0.01, min(score + bonus, 0.99))
 
         done = (
-            action.action_type == "final_decision" or self.step_count >= self.max_steps
+            action.action_type == "final_decision"
+            or self.step_count >= self.max_steps
         )
 
         if done:
-            score = max([self.grade_action(a, self.gt) for a in self.history] or [0.0])
-            score = max(0.01, min(score, 0.99))
+            score = self.grader.compute_done_score(self.history, self.gt)
 
+        # ------------------------------------------------------------------
+        # Build response
+        # ------------------------------------------------------------------
         obs = CodeReviewObservation(
             pr=self.pr,
             previous_comments=[a.comment for a in self.history if a.comment],
             step_count=self.step_count,
             max_steps=self.max_steps,
         )
-        # print("Obs == " , obs)
 
         rew = CodeReviewReward(score=score, feedback="graded")
-        print("Score == ", type(rew.score), " --- ", rew.score)
-
-        # print("FINAL REWARD TYPE:", type(rew))
-        # print("FINAL REWARD:", rew)
-        # print("Got the culprit I guess....")
+        # print(f"[{self.grader_level.upper()}] Step {self.step_count} — Score: {rew.score:.4f}")
 
         return CodeReviewStepResponse(
             observation=obs,
             reward=rew.score,
             done=done,
             info={
-                "task_type": self.task_type,
+                "grader_level":      self.grader_level,
+                "task_type":         self.task_type,
                 "issues_identified": len(self.issues_identified),
-                "fix_attempted": self.fix_attempted,
+                "fix_attempted":     self.fix_attempted,
             },
         )
 
     @property
     def state(self) -> State:
-        """
-        Get the current environment state.
-
-        Returns:
-            Current State with episode_id and step_count
-        """
         return self._state
 
-    def _invalid_step(self):
+    def _invalid_step(self) -> CodeReviewStepResponse:
         rew = CodeReviewReward(score=0.0, feedback="invalid action")
         obs = CodeReviewObservation(
-            echoed_message="Invalid action format. Please send a valid CodeReviewAction.",
             pr=self.pr,
             previous_comments=[a.comment for a in self.history if a.comment],
             step_count=self.step_count,
@@ -258,115 +198,3 @@ class CodeReviewEnvironment(Environment):
             done=True,
             info={"error": "invalid_action"},
         )
-
-    def grade_action(self, action, ground_truth):
-        score = 0.0
-
-        # print("Action === ", action)
-        # print("Ground truth === ", ground_truth)
-
-        # ------------------------------
-        # ISSUE DETECTION (40%)
-        # ------------------------------
-        issue_score = self.score_issues(action.comment, ground_truth)
-        score += 0.4 * issue_score
-        # print("After Issue Score == ", issue_score)
-
-        # ------------------------------
-        # FIX QUALITY (30%)
-        # ------------------------------
-        fix_score = self.score_fix(action.suggested_code, ground_truth)
-        score += 0.3 * fix_score
-
-        # print("After Fix Score == ", fix_score)
-
-        # ------------------------------
-        # DECISION (30%)
-        # ------------------------------
-        decision_score = self.score_decision(action, ground_truth)
-        score += 0.3 * decision_score
-
-        # print("After Decision Score == ", decision_score)
-
-        # ------------------------------
-        # CLAMP SCORE
-        # ------------------------------
-        score = max(0.01, min(score, 0.99))
-
-        return score
-
-    def normalize(self, text):
-        return (text or "").lower().strip()
-
-    # ==============================
-    # ISSUE MATCH (PARTIAL CREDIT)
-    # ==============================
-    def score_issues(self, comment, ground_truth):
-        issues = ground_truth.get("issues", [])
-        if not comment or not issues:
-            return 0.0
-
-        comment = self.normalize(comment)
-
-        matches = sum(1 for issue in issues if self.normalize(issue) in comment)
-
-        return matches / len(issues)
-
-    # ==============================
-    # FIX MATCH (FUZZY)
-    # ==============================
-    def score_fix(self, suggested_code: str, ground_truth: dict) -> float:
-        if not suggested_code:
-            return 0.0
-
-        expected_fix = self.normalize(ground_truth.get("fix", ""))
-        suggested_code = self.normalize(suggested_code)
-
-        if not expected_fix:
-            return 0.0
-
-        # 1. Exact / substring match — full score
-        if expected_fix in suggested_code:
-            return 1.0
-
-        # 2. Token overlap ignoring stop words
-        def code_tokens(text: str) -> list[str]:
-            tokens = re.findall(r"[a-zA-Z_]\w*|\d+|[=<>!+\-*/]+", text)
-            return [t for t in tokens if t.lower() not in STOP_WORDS]
-
-        expected_tokens = code_tokens(expected_fix)
-        suggested_tokens = set(code_tokens(suggested_code))
-
-        if not expected_tokens:
-            return 0.0
-
-        token_score = sum(1 for t in expected_tokens if t in suggested_tokens) / len(
-            expected_tokens
-        )
-
-        # 3. Sequence similarity as a secondary signal
-        seq_score = SequenceMatcher(None, expected_fix, suggested_code).ratio()
-
-        # Weighted: token overlap matters more than character similarity
-        return round(0.7 * token_score + 0.3 * seq_score, 4)
-
-    # ==============================
-    # DECISION MATCH
-    # ==============================
-    def score_decision(self, action, ground_truth):
-        expected = ground_truth.get("decision")
-
-        # Not a decision step → no contribution
-        if action.action_type != "final_decision":
-            return 0.0
-
-        # Missing decision → small penalty
-        if not action.decision:
-            return 0.0
-
-        # Correct decision
-        if action.decision == expected:
-            return 1.0
-
-        # Wrong decision → partial penalty (not negative)
-        return 0.2
