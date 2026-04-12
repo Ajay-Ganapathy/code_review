@@ -8,67 +8,67 @@ tasks:
   - id: task_1
     description: "Easy — missing import detection"
     max_steps: 3
-    grader: graders:EasyGrader
+    grader: server.graders:EasyGrader
   - id: task_2
     description: "Easy — missing return statement"
     max_steps: 3
-    grader: graders:EasyGrader
+    grader: server.graders:EasyGrader
   - id: task_3
     description: "Easy — wrong comparison operator"
     max_steps: 3
-    grader: graders:EasyGrader
+    grader: server.graders:EasyGrader
   - id: task_4
     description: "Easy — undefined variable"
     max_steps: 3
-    grader: graders:EasyGrader
+    grader: server.graders:EasyGrader
   - id: task_5
     description: "Easy — clean utility function"
     max_steps: 3
-    grader: graders:EasyGrader
+    grader: server.graders:EasyGrader
   - id: task_6
     description: "Medium — division by zero handling"
     max_steps: 3
-    grader: graders:MediumGrader
+    grader: server.graders:MediumGrader
   - id: task_7
     description: "Medium — inefficient loop optimization"
     max_steps: 3
-    grader: graders:MediumGrader
+    grader: server.graders:MediumGrader
   - id: task_8
     description: "Medium — mutable default argument"
     max_steps: 3
-    grader: graders:MediumGrader
+    grader: server.graders:MediumGrader
   - id: task_9
     description: "Medium — unhandled exception"
     max_steps: 3
-    grader: graders:MediumGrader
+    grader: server.graders:MediumGrader
   - id: task_10
     description: "Medium — missing input validation"
     max_steps: 3
-    grader: graders:MediumGrader
+    grader: server.graders:MediumGrader
   - id: task_11
     description: "Hard — hardcoded password security vulnerability"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
   - id: task_12
     description: "Hard — SQL injection vulnerability"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
   - id: task_13
     description: "Hard — cross-file null handling bug"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
   - id: task_14
     description: "Hard — race condition in counter"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
   - id: task_15
     description: "Hard — insecure deserialization"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
   - id: task_16
     description: "Hard — path traversal vulnerability"
     max_steps: 3
-    grader: graders:HardGrader
+    grader: server.graders:HardGrader
 endpoints:
   reset: /reset
   step: /step

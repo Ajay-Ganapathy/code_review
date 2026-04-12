@@ -80,11 +80,11 @@ class CodeReviewEnvironment(Environment):
 
         self.sample = self.dataset[self.task_index % len(self.dataset)]
 
-        self.pr        = CodeReviewPullRequest(**self.sample["pr"])
-        self.gt        = self.sample["ground_truth"]
-        self.task_type = self.sample.get("task_type", "unknown")
-        grader_level = self.task_type if self.task_type in ("easy", "medium", "hard") else "medium"
-        self.grader = get_grader(grader_level)
+        self.pr           = CodeReviewPullRequest(**self.sample["pr"])
+        self.gt           = self.sample["ground_truth"]
+        self.task_type    = self.sample.get("task_type", "unknown")
+        grader_level      = self.task_type if self.task_type in ("easy", "medium", "hard") else "medium"
+        self.grader       = get_grader(grader_level)
         self.grader_level = grader_level
 
         self.history            = []
@@ -166,7 +166,7 @@ class CodeReviewEnvironment(Environment):
         )
 
         rew = CodeReviewReward(score=score, feedback="graded")
-        # print(f"[{self.grader_level.upper()}] Step {self.step_count} — Score: {rew.score:.4f}")
+        print(f"[{self.grader_level.upper()}] Step {self.step_count} — Score: {rew.score:.4f}")
 
         return CodeReviewStepResponse(
             observation=obs,
